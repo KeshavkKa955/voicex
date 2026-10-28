@@ -1,0 +1,4001 @@
+Here is the complete production-ready source code for VoxCraft Studio.
+
+Project Structure
+
+voxcraft-studio/
+├── .env.example
+├── .gitignore
+├── index.html
+├── netlify.toml
+├── package.json
+├── tsconfig.json
+├── tsconfig.node.json
+├── vite.config.ts
+├── README.md
+├── test/
+│   ├── pcmToWav.test.ts
+│   ├── scriptParser.test.ts
+│   └── wav.test.ts
+├── netlify/
+│   ├── lib/
+│   │   ├── gemini.ts
+│   │   ├── json.ts
+│   │   ├── validation.ts
+│   │   └── wav.ts
+│   └── functions/
+│       ├── health.mts
+│       ├── tts-generate.mts
+│       ├── tts-multi-speaker.mts
+│       └── voice-analyze.mts
+└── src/
+    ├── App.tsx
+    ├── index.css
+    ├── main.tsx
+    ├── components/
+    │   ├── ApiStatusBadge.tsx
+    │   ├── AudioPlayer.tsx
+    │   ├── ExportModal.tsx
+    │   ├── FallbackBanner.tsx
+    │   ├── Header.tsx
+    │   └── tabs/
+    │       ├── AudioLabTab.tsx
+    │       ├── LibraryTab.tsx
+    │       ├── MultiSpeakerTab.tsx
+    │       ├── SingleVoiceoverTab.tsx
+    │       └── VoiceCloningTab.tsx
+    ├── services/
+    │   └── api.ts
+    ├── types/
+    │   ├── index.ts
+    │   └── lamejs.d.ts
+    └── utils/
+        ├── audioContextManager.ts
+        ├── audioProcessing.ts
+        ├── browserSpeech.ts
+        ├── db.ts
+        ├── mp3Encoder.ts
+        ├── scriptParser.ts
+        ├── storage.ts
+        └── wavUtils.ts
+
+1. Configuration Files
+
+netlify.toml
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+package.json
+
+{
+  "name": "voxcraft-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@google/genai": "^0.1.2",
+    "lucide-react": "^0.475.0",
+    "motion": "^12.4.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^3.0.0",
+    "@tailwindcss/vite": "^4.0.9",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "netlify-cli": "^17.37.2",
+    "tailwindcss": "^4.0.9",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.7"
+  }
+}
+
+vite.config.ts
+
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+  server: {
+    port: 5173,
+  },
+});
+
+tsconfig.json
+
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"]
+  },
+  "include": ["src", "netlify", "test"]
+}
+
+tsconfig.node.json
+
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+
+.env.example
+
+# Google Gemini API Key for Serverless Netlify Functions
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Model Overrides (with production defaults)
+TTS_MODEL=gemini-2.0-flash
+MULTI_TTS_MODEL=gemini-2.0-flash
+ANALYZE_MODEL=gemini-2.0-flash
+
+.gitignore
+
+node_modules
+dist
+.env
+.env.local
+.netlify
+coverage
+*.log
+.DS_Store
+
+index.html
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b5cf6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'/><path d='M15.54 8.46a5 5 0 0 1 0 7.07'/><path d='M19.07 4.93a10 10 0 0 1 0 14.14'/></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoxCraft Studio - AI Voice Production Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-violet-600 selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+2. Netlify Shared Library (netlify/lib/)
+
+netlify/lib/json.ts
+
+export function jsonResponse(
+  data: unknown,
+  status = 200,
+  extraHeaders: Record<string, string> = {}
+): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      ...extraHeaders,
+    },
+  });
+}
+
+export function errorResponse(
+  message: string,
+  status = 400,
+  details?: unknown
+): Response {
+  return jsonResponse(
+    {
+      error: {
+        message,
+        status,
+        details: details ?? null,
+      },
+    },
+    status
+  );
+}
+
+netlify/lib/validation.ts
+
+export const ALLOWED_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'] as const;
+export type VoiceName = (typeof ALLOWED_VOICES)[number];
+
+export function isAllowedVoice(voice: string): voice is VoiceName {
+  return ALLOWED_VOICES.includes(voice as VoiceName);
+}
+
+export function sanitizeText(
+  text: unknown,
+  maxChars = 3000
+): { valid: boolean; text: string; error?: string } {
+  if (typeof text !== 'string') {
+    return { valid: false, text: '', error: 'Text must be a string' };
+  }
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, text: '', error: 'Text cannot be empty' };
+  }
+  if (trimmed.length > maxChars) {
+    return {
+      valid: false,
+      text: trimmed,
+      error: `Text length (${trimmed.length}) exceeds maximum limit of ${maxChars} characters`,
+    };
+  }
+  return { valid: true, text: trimmed };
+}
+
+netlify/lib/wav.ts
+
+export function createWavHeader(
+  dataLength: number,
+  sampleRate = 24000,
+  numChannels = 1,
+  bitsPerSample = 16
+): Uint8Array {
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const buffer = new ArrayBuffer(44);
+  const view = new DataView(buffer);
+
+  // RIFF Chunk Descriptor
+  view.setUint8(0, 0x52); // 'R'
+  view.setUint8(1, 0x49); // 'I'
+  view.setUint8(2, 0x46); // 'F'
+  view.setUint8(3, 0x46); // 'F'
+  view.setUint32(4, 36 + dataLength, true); // chunkSize (file size - 8)
+  view.setUint8(8, 0x57);  // 'W'
+  view.setUint8(9, 0x41);  // 'A'
+  view.setUint8(10, 0x56); // 'V'
+  view.setUint8(11, 0x45); // 'E'
+
+  // "fmt " Sub-Chunk
+  view.setUint8(12, 0x66); // 'f'
+  view.setUint8(13, 0x6d); // 'm'
+  view.setUint8(14, 0x74); // 't'
+  view.setUint8(15, 0x20); // ' '
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
+  view.setUint16(22, numChannels, true); // NumChannels
+  view.setUint32(24, sampleRate, true); // SampleRate
+  view.setUint32(28, byteRate, true); // ByteRate
+  view.setUint16(32, blockAlign, true); // BlockAlign
+  view.setUint16(34, bitsPerSample, true); // BitsPerSample
+
+  // "data" Sub-Chunk
+  view.setUint8(36, 0x64); // 'd'
+  view.setUint8(37, 0x61); // 'a'
+  view.setUint8(38, 0x74); // 't'
+  view.setUint8(39, 0x61); // 'a'
+  view.setUint32(40, dataLength, true); // Subchunk2Size
+
+  return new Uint8Array(buffer);
+}
+
+export function pcmToWav(
+  pcmData: Uint8Array,
+  sampleRate = 24000,
+  numChannels = 1,
+  bitsPerSample = 16
+): Uint8Array {
+  const header = createWavHeader(pcmData.length, sampleRate, numChannels, bitsPerSample);
+  const wav = new Uint8Array(header.length + pcmData.length);
+  wav.set(header, 0);
+  wav.set(pcmData, header.length);
+  return wav;
+}
+
+export function concatPcmBuffers(
+  buffers: Uint8Array[],
+  silenceMs = 250,
+  sampleRate = 24000,
+  bitsPerSample = 16
+): Uint8Array {
+  if (buffers.length === 0) return new Uint8Array(0);
+  if (buffers.length === 1) return buffers[0];
+
+  const silenceSamples = Math.floor((sampleRate * silenceMs) / 1000);
+  const bytesPerSample = bitsPerSample / 8;
+  const silenceBytesCount = silenceSamples * bytesPerSample;
+  const silenceBuffer = new Uint8Array(silenceBytesCount);
+
+  let totalLength = 0;
+  for (let i = 0; i < buffers.length; i++) {
+    totalLength += buffers[i].length;
+    if (i < buffers.length - 1) {
+      totalLength += silenceBytesCount;
+    }
+  }
+
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (let i = 0; i < buffers.length; i++) {
+    result.set(buffers[i], offset);
+    offset += buffers[i].length;
+    if (i < buffers.length - 1) {
+      result.set(silenceBuffer, offset);
+      offset += silenceBytesCount;
+    }
+  }
+
+  return result;
+}
+
+netlify/lib/gemini.ts
+
+import { GoogleGenAI } from '@google/genai';
+
+export function getGeminiApiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY?.trim();
+}
+
+export function getGeminiClient(): GoogleGenAI {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured in environment variables');
+  }
+  return new GoogleGenAI({ apiKey });
+}
+
+export function getModelNames() {
+  return {
+    ttsModel: process.env.TTS_MODEL || 'gemini-2.0-flash',
+    multiTtsModel: process.env.MULTI_TTS_MODEL || 'gemini-2.0-flash',
+    analyzeModel: process.env.ANALYZE_MODEL || 'gemini-2.0-flash',
+  };
+}
+
+export async function generateGeminiSpeech(
+  prompt: string,
+  voice: string,
+  modelName: string
+): Promise<Buffer> {
+  const ai = getGeminiClient();
+
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    config: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: voice,
+          },
+        },
+      },
+    },
+  });
+
+  const candidate = response.candidates?.[0];
+  let base64Audio: string | undefined;
+
+  for (const part of candidate?.content?.parts || []) {
+    if (part && typeof part === 'object' && 'inlineData' in part && part.inlineData?.data) {
+      base64Audio = part.inlineData.data;
+      break;
+    }
+  }
+
+  if (!base64Audio) {
+    throw new Error('Gemini TTS model did not return inline audio data');
+  }
+
+  return Buffer.from(base64Audio, 'base64');
+}
+
+3. Netlify Functions (netlify/functions/)
+
+netlify/functions/health.mts
+
+import type { Config } from '@netlify/functions';
+import { jsonResponse } from '../lib/json';
+import { getGeminiApiKey, getModelNames } from '../lib/gemini';
+
+export default async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') {
+    return jsonResponse({ ok: true }, 204);
+  }
+
+  const apiKey = getGeminiApiKey();
+  const models = getModelNames();
+
+  return jsonResponse({
+    status: apiKey ? 'ok' : 'warning',
+    hasApiKey: Boolean(apiKey),
+    timestamp: new Date().toISOString(),
+    models,
+  });
+};
+
+export const config: Config = {
+  path: '/api/health',
+};
+
+netlify/functions/tts-generate.mts
+
+import type { Config } from '@netlify/functions';
+import { jsonResponse, errorResponse } from '../lib/json';
+import { getGeminiApiKey, generateGeminiSpeech, getModelNames } from '../lib/gemini';
+import { isAllowedVoice, sanitizeText } from '../lib/validation';
+import { createWavHeader } from '../lib/wav';
+
+export default async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') {
+    return jsonResponse({ ok: true }, 204);
+  }
+
+  if (req.method !== 'POST') {
+    return errorResponse('Method Not Allowed. Use POST.', 405);
+  }
+
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return errorResponse(
+      'GEMINI_API_KEY is missing. Please configure it in your Netlify Environment Variables.',
+      503
+    );
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse('Invalid JSON request body', 400);
+  }
+
+  const { text, voice = 'Puck', language, accent, tone, styleDirections } = body || {};
+
+  const validation = sanitizeText(text, 3000);
+  if (!validation.valid) {
+    const status = validation.text && validation.text.length > 3000 ? 413 : 400;
+    return errorResponse(validation.error || 'Invalid text input', status);
+  }
+
+  if (!isAllowedVoice(voice)) {
+    return errorResponse(`Invalid voice "${voice}". Allowed: Puck, Charon, Kore, Fenrir, Zephyr`, 400);
+  }
+
+  const { ttsModel } = getModelNames();
+
+  const instructions: string[] = [];
+  if (language && language !== 'auto') instructions.push(`Language: ${language}`);
+  if (accent && accent !== 'neutral') instructions.push(`Accent: ${accent}`);
+  if (tone && tone !== 'neutral') instructions.push(`Tone: ${tone}`);
+  if (styleDirections && typeof styleDirections === 'string' && styleDirections.trim()) {
+    instructions.push(`Style: ${styleDirections.trim()}`);
+  }
+
+  let prompt = validation.text;
+  if (instructions.length > 0) {
+    prompt = `Please speak the following text naturally (${instructions.join(', ')}):\n\n${validation.text}`;
+  }
+
+  try {
+    const rawPcmBuffer = await generateGeminiSpeech(prompt, voice, ttsModel);
+
+    const isAlreadyWav =
+      rawPcmBuffer.length >= 12 &&
+      rawPcmBuffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      rawPcmBuffer.subarray(8, 12).toString('ascii') === 'WAVE';
+
+    let wavBuffer: Buffer;
+    if (isAlreadyWav) {
+      wavBuffer = rawPcmBuffer;
+    } else {
+      const header = createWavHeader(rawPcmBuffer.length, 24000, 1, 16);
+      wavBuffer = Buffer.concat([Buffer.from(header.buffer), rawPcmBuffer]);
+    }
+
+    return jsonResponse({
+      audioBase64: wavBuffer.toString('base64'),
+      mimeType: 'audio/wav',
+      sampleRate: 24000,
+    });
+  } catch (err: any) {
+    console.error('TTS Generation Error:', err);
+    return errorResponse(err.message || 'TTS generation failed', 500);
+  }
+};
+
+export const config: Config = {
+  path: '/api/tts/generate',
+};
+
+netlify/functions/tts-multi-speaker.mts
+
+import type { Config } from '@netlify/functions';
+import { jsonResponse, errorResponse } from '../lib/json';
+import { getGeminiApiKey, generateGeminiSpeech, getModelNames } from '../lib/gemini';
+import { isAllowedVoice } from '../lib/validation';
+import { createWavHeader, concatPcmBuffers } from '../lib/wav';
+
+interface SpeakerInput {
+  name: string;
+  voice: string;
+  tone?: string;
+}
+
+export default async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') {
+    return jsonResponse({ ok: true }, 204);
+  }
+
+  if (req.method !== 'POST') {
+    return errorResponse('Method Not Allowed. Use POST.', 405);
+  }
+
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return errorResponse(
+      'GEMINI_API_KEY is missing. Please configure it in your Netlify Environment Variables.',
+      503
+    );
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse('Invalid JSON request body', 400);
+  }
+
+  const { script, speaker1, speaker2, language, accent } = body || {};
+
+  if (!script || typeof script !== 'string' || !script.trim()) {
+    return errorResponse('Script text cannot be empty', 400);
+  }
+
+  if (script.length > 3000) {
+    return errorResponse(`Script length (${script.length}) exceeds 3000 characters limit`, 413);
+  }
+
+  const s1: SpeakerInput = speaker1 || { name: 'Speaker 1', voice: 'Puck' };
+  const s2: SpeakerInput = speaker2 || { name: 'Speaker 2', voice: 'Kore' };
+
+  if (!isAllowedVoice(s1.voice)) {
+    return errorResponse(`Invalid voice for Speaker 1: ${s1.voice}`, 400);
+  }
+  if (!isAllowedVoice(s2.voice)) {
+    return errorResponse(`Invalid voice for Speaker 2: ${s2.voice}`, 400);
+  }
+
+  const lines = script.split('\n');
+  const turns: Array<{ speaker: string; text: string; voice: string; tone?: string }> = [];
+
+  let currentSpeaker = s1.name;
+  let currentBuffer: string[] = [];
+  const linePattern = /^([A-Za-z0-9_\-\s]{1,30}):\s*(.*)$/;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const match = line.match(linePattern);
+    if (match) {
+      if (currentBuffer.length > 0) {
+        const isS2 = currentSpeaker.trim().toLowerCase() === s2.name.trim().toLowerCase();
+        turns.push({
+          speaker: currentSpeaker,
+          text: currentBuffer.join(' ').trim(),
+          voice: isS2 ? s2.voice : s1.voice,
+          tone: isS2 ? s2.tone : s1.tone,
+        });
+        currentBuffer = [];
+      }
+      currentSpeaker = match[1].trim();
+      if (match[2].trim()) {
+        currentBuffer.push(match[2].trim());
+      }
+    } else {
+      currentBuffer.push(line);
+    }
+  }
+
+  if (currentBuffer.length > 0) {
+    const isS2 = currentSpeaker.trim().toLowerCase() === s2.name.trim().toLowerCase();
+    turns.push({
+      speaker: currentSpeaker,
+      text: currentBuffer.join(' ').trim(),
+      voice: isS2 ? s2.voice : s1.voice,
+      tone: isS2 ? s2.tone : s1.tone,
+    });
+  }
+
+  if (turns.length === 0) {
+    return errorResponse('Script does not contain any valid dialogue lines', 400);
+  }
+
+  const { multiTtsModel } = getModelNames();
+
+  try {
+    const pcmBuffers: Uint8Array[] = [];
+
+    for (const turn of turns) {
+      const directions: string[] = [];
+      if (language && language !== 'auto') directions.push(`Language: ${language}`);
+      if (accent && accent !== 'neutral') directions.push(`Accent: ${accent}`);
+      if (turn.tone && turn.tone !== 'neutral') directions.push(`Tone: ${turn.tone}`);
+
+      let prompt = turn.text;
+      if (directions.length > 0) {
+        prompt = `Please speak the following naturally (${directions.join(', ')}):\n\n${turn.text}`;
+      }
+
+      const turnRaw = await generateGeminiSpeech(prompt, turn.voice, multiTtsModel);
+
+      let pcm: Uint8Array;
+      if (
+        turnRaw.length >= 44 &&
+        turnRaw.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        turnRaw.subarray(8, 12).toString('ascii') === 'WAVE'
+      ) {
+        pcm = new Uint8Array(turnRaw.subarray(44));
+      } else {
+        pcm = new Uint8Array(turnRaw);
+      }
+
+      pcmBuffers.push(pcm);
+    }
+
+    const mergedPcm = concatPcmBuffers(pcmBuffers, 250, 24000, 16);
+    const wavHeader = createWavHeader(mergedPcm.length, 24000, 1, 16);
+    const finalWav = Buffer.concat([Buffer.from(wavHeader.buffer), Buffer.from(mergedPcm.buffer)]);
+
+    return jsonResponse({
+      audioBase64: finalWav.toString('base64'),
+      mimeType: 'audio/wav',
+      sampleRate: 24000,
+    });
+  } catch (err: any) {
+    console.error('Multi-speaker TTS error:', err);
+    return errorResponse(err.message || 'Multi-speaker synthesis failed', 500);
+  }
+};
+
+export const config: Config = {
+  path: '/api/tts/multi-speaker',
+};
+
+netlify/functions/voice-analyze.mts
+
+import type { Config } from '@netlify/functions';
+import { jsonResponse, errorResponse } from '../lib/json';
+import { getGeminiApiKey, getGeminiClient, getModelNames } from '../lib/gemini';
+
+export default async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') {
+    return jsonResponse({ ok: true }, 204);
+  }
+
+  if (req.method !== 'POST') {
+    return errorResponse('Method Not Allowed. Use POST.', 405);
+  }
+
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return errorResponse(
+      'GEMINI_API_KEY is missing. Please configure it in your Netlify Environment Variables.',
+      503
+    );
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse('Invalid JSON request body', 400);
+  }
+
+  const { audioBase64, mimeType = 'audio/wav' } = body || {};
+
+  if (!audioBase64 || typeof audioBase64 !== 'string') {
+    return errorResponse('Missing audioBase64 string in request', 400);
+  }
+
+  // Check 4MB payload limit (base64 string is ~5.5MB for 4MB binary)
+  if (audioBase64.length > 5.5 * 1024 * 1024) {
+    return errorResponse('Audio sample exceeds 4 MB size limit', 413);
+  }
+
+  const { analyzeModel } = getModelNames();
+  const ai = getGeminiClient();
+
+  const prompt = `You are a voice director and audio analysis system.
+Listen to and analyze this audio sample. Describe its vocal qualities to clone its performance style.
+
+Recommend the closest matching base voice from: Puck, Charon, Kore, Fenrir, Zephyr.
+- Puck: Upbeat, dynamic, youthful male
+- Charon: Calm, deep, authoritative, professional male
+- Kore: Firm, articulate, professional female
+- Fenrir: Excitable, energetic, dramatic male
+- Zephyr: Bright, warm, melodic female
+
+Respond ONLY with valid JSON matching this schema:
+{
+  "accent": "detected accent or dialect (e.g. North American General, British RP, Australian)",
+  "recommendedVoice": "Puck" | "Charon" | "Kore" | "Fenrir" | "Zephyr",
+  "characteristics": {
+    "pitch": "Low / Medium-Low / Medium / Medium-High / High",
+    "tempo": "Slow / Moderate / Brisk / Fast",
+    "tone": "Warm, conversational, crisp, authoritative, etc.",
+    "texture": "Smooth, raspy, breathy, resonant, clear",
+    "gender": "Masculine / Feminine / Neutral"
+  },
+  "stylePrompt": "Rich, actionable prompt direction to instruct TTS to reproduce this vocal style",
+  "summary": "1-2 sentence description of the speaker's distinctive style"
+}`;
+
+  try {
+    const cleanBase64 = audioBase64.replace(/^data:audio\/[a-zA-Z0-9.-]+;base64,/, '');
+
+    const response = await ai.models.generateContent({
+      model: analyzeModel,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType || 'audio/wav',
+                data: cleanBase64,
+              },
+            },
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const responseText = response.text || '';
+    let parsed: any;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch {
+      const match = responseText.match(/\{[\s\S]*\}/);
+      if (match) {
+        parsed = JSON.parse(match[0]);
+      } else {
+        throw new Error('Failed to parse Gemini response as JSON');
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      analysis: parsed,
+    });
+  } catch (err: any) {
+    console.error('Voice analysis failed:', err);
+    return errorResponse(err.message || 'Voice analysis failed', 500);
+  }
+};
+
+export const config: Config = {
+  path: '/api/voice/analyze-sample',
+};
+
+4. Frontend Types & Declarations (src/types/)
+
+src/types/lamejs.d.ts
+
+declare module '@breezystack/lamejs' {
+  export class Mp3Encoder {
+    constructor(channels: number, sampleRate: number, kbps: number);
+    encodeBuffer(left: Int16Array, right?: Int16Array): Int8Array;
+    flush(): Int8Array;
+  }
+}
+
+src/types/index.ts
+
+export type VoiceName = 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
+
+export interface VoiceProfile {
+  id: string;
+  name: string;
+  createdAt: number;
+  accent: string;
+  recommendedVoice: VoiceName;
+  characteristics: {
+    pitch?: string;
+    tempo?: string;
+    tone?: string;
+    texture?: string;
+    gender?: string;
+  };
+  stylePrompt: string;
+  summary: string;
+}
+
+export interface LibraryTrack {
+  id: string;
+  title: string;
+  createdAt: number;
+  duration: number; // in seconds
+  voiceName: string;
+  mode: 'single' | 'dialogue' | 'cloned' | 'edited';
+  textSnippet: string;
+  audioBlob: Blob;
+}
+
+export interface DialogueTurn {
+  id: string;
+  speaker: string;
+  text: string;
+}
+
+5. Frontend Services & Utilities (src/services/ & src/utils/)
+
+src/services/api.ts
+
+import { VoiceName } from '../types';
+
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+export async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Network connection failed';
+    throw new ApiError(`Network error: ${errorMsg}`, 0);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.toLowerCase().includes('application/json');
+
+  if (!isJson) {
+    const textPreview = await res.text();
+    const snippet = textPreview.slice(0, 150).replace(/<[^>]*>/g, '').trim();
+    throw new ApiError(
+      `Server returned non-JSON response (${res.status} ${res.statusText}): ${snippet || 'Unknown response'}`,
+      res.status,
+      textPreview
+    );
+  }
+
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new ApiError('Failed to parse JSON response from server', res.status);
+  }
+
+  if (!res.ok) {
+    const errorMessage =
+      data?.error?.message ||
+      data?.message ||
+      `Request failed with status ${res.status}`;
+    throw new ApiError(errorMessage, res.status, data);
+  }
+
+  return data as T;
+}
+
+export interface HealthResponse {
+  status: 'ok' | 'warning' | 'error';
+  hasApiKey: boolean;
+  timestamp: string;
+  models?: {
+    tts: string;
+    multiTts: string;
+    analyze: string;
+  };
+}
+
+export interface TtsResponse {
+  audioBase64: string;
+  mimeType: string;
+  sampleRate: number;
+}
+
+export interface VoiceAnalysisResult {
+  accent: string;
+  recommendedVoice: VoiceName;
+  characteristics: {
+    pitch?: string;
+    tempo?: string;
+    tone?: string;
+    texture?: string;
+    gender?: string;
+  };
+  stylePrompt: string;
+  summary: string;
+}
+
+export interface VoiceAnalysisResponse {
+  success: boolean;
+  analysis: VoiceAnalysisResult;
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  return requestJson<HealthResponse>('/api/health');
+}
+
+export async function generateSingleTts(params: {
+  text: string;
+  voice: VoiceName;
+  language?: string;
+  accent?: string;
+  tone?: string;
+  styleDirections?: string;
+}): Promise<TtsResponse> {
+  return requestJson<TtsResponse>('/api/tts/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+export async function generateMultiSpeakerTts(params: {
+  script: string;
+  speaker1: { name: string; voice: VoiceName; tone?: string };
+  speaker2: { name: string; voice: VoiceName; tone?: string };
+  language?: string;
+  accent?: string;
+}): Promise<TtsResponse> {
+  return requestJson<TtsResponse>('/api/tts/multi-speaker', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+export async function analyzeVoiceSample(params: {
+  audioBase64: string;
+  mimeType?: string;
+}): Promise<VoiceAnalysisResponse> {
+  return requestJson<VoiceAnalysisResponse>('/api/voice/analyze-sample', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+src/utils/audioContextManager.ts
+
+let sharedContext: AudioContext | null = null;
+
+export function getAudioContext(): AudioContext {
+  if (!sharedContext) {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    sharedContext = new AudioCtx();
+  }
+  return sharedContext;
+}
+
+export async function ensureAudioContextStarted(): Promise<AudioContext> {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  return ctx;
+}
+
+src/utils/wavUtils.ts
+
+export function base64ToBlob(base64: string, mimeType = 'audio/wav'): Blob {
+  const clean = base64.replace(/^data:[a-zA-Z0-9/.-]+;base64,/, '');
+  const byteChars = atob(clean);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+}
+
+export async function blobToAudioBuffer(blob: Blob, ctx: AudioContext): Promise<AudioBuffer> {
+  const arrayBuffer = await blob.arrayBuffer();
+  return await ctx.decodeAudioData(arrayBuffer);
+}
+
+export function audioBufferToWav(buffer: AudioBuffer, opt?: { float32?: boolean }): Blob {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const isFloat = Boolean(opt?.float32);
+  const format = isFloat ? 3 : 1;
+  const bitDepth = isFloat ? 32 : 16;
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+
+  const numSamples = buffer.length;
+  const dataByteLength = numSamples * blockAlign;
+  const arrayBuffer = new ArrayBuffer(44 + dataByteLength);
+  const view = new DataView(arrayBuffer);
+
+  function writeString(offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataByteLength, true);
+  writeString(8, 'WAVE');
+
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+
+  writeString(36, 'data');
+  view.setUint32(40, dataByteLength, true);
+
+  let offset = 44;
+  if (bitDepth === 16) {
+    for (let i = 0; i < numSamples; i++) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        let sample = buffer.getChannelData(ch)[i];
+        sample = Math.max(-1, Math.min(1, sample));
+        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        view.setInt16(offset, intSample, true);
+        offset += 2;
+      }
+    }
+  } else {
+    for (let i = 0; i < numSamples; i++) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        const sample = buffer.getChannelData(ch)[i];
+        view.setFloat32(offset, sample, true);
+        offset += 4;
+      }
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+src/utils/mp3Encoder.ts
+
+import { Mp3Encoder } from '@breezystack/lamejs';
+
+export async function audioBufferToMp3(
+  buffer: AudioBuffer,
+  kbps = 192
+): Promise<Blob> {
+  const channels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const numSamples = buffer.length;
+
+  const encoder = new Mp3Encoder(channels, sampleRate, kbps);
+  const mp3Data: Uint8Array[] = [];
+  const sampleBlockSize = 1152;
+
+  const leftFloat = buffer.getChannelData(0);
+  const rightFloat = channels > 1 ? buffer.getChannelData(1) : leftFloat;
+
+  const leftInt16 = new Int16Array(numSamples);
+  const rightInt16 = channels > 1 ? new Int16Array(numSamples) : leftInt16;
+
+  for (let i = 0; i < numSamples; i++) {
+    const sL = Math.max(-1, Math.min(1, leftFloat[i]));
+    leftInt16[i] = sL < 0 ? sL * 0x8000 : sL * 0x7fff;
+
+    if (channels > 1) {
+      const sR = Math.max(-1, Math.min(1, rightFloat[i]));
+      rightInt16[i] = sR < 0 ? sR * 0x8000 : sR * 0x7fff;
+    }
+  }
+
+  for (let i = 0; i < numSamples; i += sampleBlockSize) {
+    const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
+    let mp3buf: Int8Array;
+
+    if (channels === 1) {
+      mp3buf = encoder.encodeBuffer(leftChunk);
+    } else {
+      const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
+      mp3buf = encoder.encodeBuffer(leftChunk, rightChunk);
+    }
+
+    if (mp3buf.length > 0) {
+      mp3Data.push(new Uint8Array(mp3buf));
+    }
+  }
+
+  const flushBuf = encoder.flush();
+  if (flushBuf.length > 0) {
+    mp3Data.push(new Uint8Array(flushBuf));
+  }
+
+  return new Blob(mp3Data as unknown as BlobPart[], { type: 'audio/mp3' });
+}
+
+src/utils/audioProcessing.ts
+
+import { audioBufferToWav } from './wavUtils';
+
+export interface ProcessOptions {
+  trimStart?: number;
+  trimEnd?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+  volume?: number;
+  playbackRate?: number;
+}
+
+export async function processAudioBuffer(
+  sourceBuffer: AudioBuffer,
+  options: ProcessOptions
+): Promise<AudioBuffer> {
+  const start = Math.max(0, options.trimStart ?? 0);
+  const end = Math.min(sourceBuffer.duration, options.trimEnd ?? sourceBuffer.duration);
+  const duration = Math.max(0.01, end - start);
+  const rate = options.playbackRate ?? 1.0;
+  const finalDuration = duration / rate;
+  const sampleRate = sourceBuffer.sampleRate;
+  const numChannels = sourceBuffer.numberOfChannels;
+
+  const offlineCtx = new OfflineAudioContext(
+    numChannels,
+    Math.ceil(finalDuration * sampleRate),
+    sampleRate
+  );
+
+  const source = offlineCtx.createBufferSource();
+  source.buffer = sourceBuffer;
+  source.playbackRate.value = rate;
+
+  const gainNode = offlineCtx.createGain();
+  const vol = options.volume ?? 1.0;
+  gainNode.gain.setValueAtTime(vol, 0);
+
+  const fadeIn = options.fadeIn ?? 0;
+  if (fadeIn > 0) {
+    gainNode.gain.setValueAtTime(0.0001, 0);
+    gainNode.gain.linearRampToValueAtTime(vol, Math.min(fadeIn, finalDuration));
+  }
+
+  const fadeOut = options.fadeOut ?? 0;
+  if (fadeOut > 0 && finalDuration > fadeOut) {
+    gainNode.gain.setValueAtTime(vol, finalDuration - fadeOut);
+    gainNode.gain.linearRampToValueAtTime(0.0001, finalDuration);
+  }
+
+  source.connect(gainNode);
+  gainNode.connect(offlineCtx.destination);
+  source.start(0, start, duration);
+
+  return await offlineCtx.startRendering();
+}
+
+export function createSyntheticAudioBlob(durationSec = 2.0, sampleRate = 24000): Blob {
+  const numSamples = Math.floor(durationSec * sampleRate);
+  const ctx = new OfflineAudioContext(1, numSamples, sampleRate);
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, 0);
+  osc.frequency.exponentialRampToValueAtTime(880, durationSec);
+
+  gain.gain.setValueAtTime(0.3, 0);
+  gain.gain.exponentialRampToValueAtTime(0.001, durationSec);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(0);
+  osc.stop(durationSec);
+
+  return ctx.startRendering().then((buf) => audioBufferToWav(buf)) as unknown as Blob;
+}
+
+src/utils/scriptParser.ts
+
+import { DialogueTurn } from '../types';
+
+export function parseDialogueScript(
+  scriptText: string,
+  defaultSpeaker1 = 'Speaker 1'
+): DialogueTurn[] {
+  const lines = scriptText.split('\n');
+  const turns: DialogueTurn[] = [];
+
+  let currentSpeaker = defaultSpeaker1;
+  let currentBuffer: string[] = [];
+
+  const lineRegex = /^([A-Za-z0-9_\-\s]{1,30}):\s*(.*)$/;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const match = line.match(lineRegex);
+    if (match) {
+      if (currentBuffer.length > 0) {
+        turns.push({
+          id: `turn-${turns.length + 1}`,
+          speaker: currentSpeaker,
+          text: currentBuffer.join(' ').trim(),
+        });
+        currentBuffer = [];
+      }
+      currentSpeaker = match[1].trim();
+      if (match[2].trim()) {
+        currentBuffer.push(match[2].trim());
+      }
+    } else {
+      currentBuffer.push(line);
+    }
+  }
+
+  if (currentBuffer.length > 0) {
+    turns.push({
+      id: `turn-${turns.length + 1}`,
+      speaker: currentSpeaker,
+      text: currentBuffer.join(' ').trim(),
+    });
+  }
+
+  return turns.filter((t) => t.text.length > 0);
+}
+
+export function extractSpeakerNames(scriptText: string): string[] {
+  const turns = parseDialogueScript(scriptText);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const turn of turns) {
+    const lower = turn.speaker.trim().toLowerCase();
+    if (lower && !seen.has(lower)) {
+      seen.add(lower);
+      names.push(turn.speaker.trim());
+    }
+  }
+  return names;
+}
+
+src/utils/browserSpeech.ts
+
+export function speakWithBrowserTts(
+  text: string,
+  options: {
+    pitch?: number;
+    rate?: number;
+    voiceGender?: 'male' | 'female';
+    onEnd?: () => void;
+    onError?: (err: unknown) => void;
+  } = {}
+): SpeechSynthesisUtterance | null {
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    console.warn('SpeechSynthesis is not supported in this environment');
+    return null;
+  }
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = options.rate ?? 1.0;
+  utterance.pitch = options.pitch ?? 1.0;
+
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    if (options.voiceGender === 'female') {
+      const femaleVoice = voices.find(
+        (v) =>
+          v.name.toLowerCase().includes('female') ||
+          v.name.toLowerCase().includes('samantha') ||
+          v.name.toLowerCase().includes('victoria') ||
+          v.name.toLowerCase().includes('zira')
+      );
+      if (femaleVoice) utterance.voice = femaleVoice;
+    } else {
+      const maleVoice = voices.find(
+        (v) =>
+          v.name.toLowerCase().includes('male') ||
+          v.name.toLowerCase().includes('alex') ||
+          v.name.toLowerCase().includes('david') ||
+          v.name.toLowerCase().includes('daniel')
+      );
+      if (maleVoice) utterance.voice = maleVoice;
+    }
+  }
+
+  if (options.onEnd) utterance.onend = options.onEnd;
+  if (options.onError) utterance.onerror = options.onError;
+
+  window.speechSynthesis.speak(utterance);
+  return utterance;
+}
+
+src/utils/storage.ts
+
+import { VoiceProfile } from '../types';
+
+const PROFILES_STORAGE_KEY = 'voxcraft_voice_profiles_v1';
+
+export function loadVoiceProfiles(): VoiceProfile[] {
+  try {
+    const data = localStorage.getItem(PROFILES_STORAGE_KEY);
+    if (!data) return [];
+    return JSON.parse(data) as VoiceProfile[];
+  } catch (err) {
+    console.warn('Failed to load voice profiles from localStorage:', err);
+    return [];
+  }
+}
+
+export function saveVoiceProfile(profile: VoiceProfile): boolean {
+  try {
+    const profiles = loadVoiceProfiles();
+    const updated = [profile, ...profiles.filter((p) => p.id !== profile.id)];
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(updated));
+    return true;
+  } catch (err) {
+    console.error('Failed to save voice profile to localStorage:', err);
+    return false;
+  }
+}
+
+export function deleteVoiceProfile(id: string): boolean {
+  try {
+    const profiles = loadVoiceProfiles();
+    const updated = profiles.filter((p) => p.id !== id);
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(updated));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete voice profile from localStorage:', err);
+    return false;
+  }
+}
+
+src/utils/db.ts
+
+import { LibraryTrack } from '../types';
+
+const DB_NAME = 'voxcraft_studio_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'library_tracks';
+
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is not supported'));
+      return;
+    }
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function saveTrackToLibrary(track: LibraryTrack): Promise<void> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put(track);
+
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getAllTracks(): Promise<LibraryTrack[]> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+
+    req.onsuccess = () => {
+      const tracks = (req.result as LibraryTrack[]) || [];
+      tracks.sort((a, b) => b.createdAt - a.createdAt);
+      resolve(tracks);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteTrackFromLibrary(id: string): Promise<void> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.delete(id);
+
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function updateTrackTitle(id: string, newTitle: string): Promise<void> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(id);
+
+    getReq.onsuccess = () => {
+      const track = getReq.result as LibraryTrack;
+      if (track) {
+        track.title = newTitle;
+        const putReq = store.put(track);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      } else {
+        resolve();
+      }
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+6. Components (src/components/)
+
+src/components/ApiStatusBadge.tsx
+
+import React from 'react';
+import { Sparkles, AlertTriangle, WifiOff } from 'lucide-react';
+import { HealthResponse } from '../services/api';
+
+interface ApiStatusBadgeProps {
+  health: HealthResponse | null;
+  loading: boolean;
+  onRefresh: () => void;
+}
+
+export const ApiStatusBadge: React.FC<ApiStatusBadgeProps> = ({ health, loading, onRefresh }) => {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400">
+        <span className="w-2 h-2 rounded-full bg-zinc-500 animate-pulse" />
+        Checking Engine...
+      </div>
+    );
+  }
+
+  if (!health) {
+    return (
+      <button
+        onClick={onRefresh}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-950/60 border border-rose-800/80 text-xs text-rose-300 hover:bg-rose-900/60 transition cursor-pointer"
+        title="Cannot reach backend functions. Click to retry."
+      >
+        <WifiOff className="w-3.5 h-3.5 text-rose-400" />
+        Offline
+      </button>
+    );
+  }
+
+  if (health.hasApiKey) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-800/80 text-xs text-emerald-300 font-medium">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+        </span>
+        <Sparkles className="w-3 h-3 text-emerald-400" />
+        Gemini TTS Active
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={onRefresh}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-950/70 border border-amber-800/80 text-xs text-amber-300 font-medium hover:bg-amber-900/60 transition cursor-pointer"
+      title="GEMINI_API_KEY is not configured in Netlify environment variables. Browser speech synthesis will be used."
+    >
+      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+      API Key Missing
+    </button>
+  );
+};
+
+src/components/FallbackBanner.tsx
+
+import React from 'react';
+import { AlertCircle, X } from 'lucide-react';
+
+interface FallbackBannerProps {
+  visible: boolean;
+  message?: string;
+  onDismiss: () => void;
+}
+
+export const FallbackBanner: React.FC<FallbackBannerProps> = ({
+  visible,
+  message = 'AI voice unavailable, using browser voice.',
+  onDismiss,
+}) => {
+  if (!visible) return null;
+
+  return (
+    <div className="bg-amber-950/80 border-b border-amber-700/60 text-amber-200 px-4 py-2.5 text-sm flex items-center justify-between shadow-lg">
+      <div className="flex items-center gap-2.5">
+        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+        <span className="font-medium">{message}</span>
+        <span className="text-amber-400/80 text-xs hidden sm:inline">
+          (Check your GEMINI_API_KEY in Netlify Site Configuration &gt; Environment Variables)
+        </span>
+      </div>
+      <button
+        onClick={onDismiss}
+        className="p-1 hover:bg-amber-900/60 rounded text-amber-300 transition"
+        aria-label="Dismiss banner"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
+src/components/Header.tsx
+
+import React from 'react';
+import { Waves, Sparkles, SlidersHorizontal, Users, Mic, FolderHeart } from 'lucide-react';
+import { ApiStatusBadge } from './ApiStatusBadge';
+import { HealthResponse } from '../services/api';
+
+export type TabKey = 'single' | 'dialogue' | 'cloning' | 'editor' | 'library';
+
+interface HeaderProps {
+  activeTab: TabKey;
+  onTabChange: (tab: TabKey) => void;
+  health: HealthResponse | null;
+  healthLoading: boolean;
+  onRefreshHealth: () => void;
+  tracksCount: number;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  activeTab,
+  onTabChange,
+  health,
+  healthLoading,
+  onRefreshHealth,
+  tracksCount,
+}) => {
+  const tabs = [
+    { key: 'single' as TabKey, label: 'Single Voiceover', icon: Sparkles },
+    { key: 'dialogue' as TabKey, label: 'Multi-Speaker', icon: Users },
+    { key: 'cloning' as TabKey, label: 'Style Cloning', icon: Mic },
+    { key: 'editor' as TabKey, label: 'Audio Lab', icon: SlidersHorizontal },
+    { key: 'library' as TabKey, label: 'Library', icon: FolderHeart, badge: tracksCount },
+  ];
+
+  return (
+    <header className="border-b border-zinc-800 bg-zinc-950/90 backdrop-blur sticky top-0 z-40">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
+              <Waves className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
+                  VoxCraft
+                </span>
+                <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  Studio
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400 hidden sm:block">AI Text-to-Speech & Vocal Production</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <ApiStatusBadge health={health} loading={healthLoading} onRefresh={onRefreshHealth} />
+          </div>
+        </div>
+
+        <nav className="flex space-x-1 overflow-x-auto no-scrollbar py-2 border-t border-zinc-900">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => onTabChange(tab.key)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-violet-600 text-white shadow-md shadow-violet-600/20'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-zinc-400'}`} />
+                {tab.label}
+                {typeof tab.badge === 'number' && tab.badge > 0 && (
+                  <span
+                    className={`ml-1 px-1.5 py-0.2 rounded-full text-xs font-semibold ${
+                      isActive ? 'bg-violet-800 text-violet-100' : 'bg-zinc-800 text-zinc-300'
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+    </header>
+  );
+};
+
+src/components/AudioPlayer.tsx
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Play, Pause, RotateCcw, Volume2, VolumeX, Download, Wand2, BookmarkPlus } from 'lucide-react';
+
+interface AudioPlayerProps {
+  blob: Blob | null;
+  title?: string;
+  onSendToLab?: (blob: Blob, title?: string) => void;
+  onSaveToLibrary?: (blob: Blob, title?: string) => void;
+  onOpenExport?: (blob: Blob, title?: string) => void;
+}
+
+export const AudioPlayer: React.FC<AudioPlayerProps> = ({
+  blob,
+  title = 'Voice Output',
+  onSendToLab,
+  onSaveToLibrary,
+  onOpenExport,
+}) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1.0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!blob) {
+      setObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    setObjectUrl(url);
+    setIsPlaying(false);
+    setCurrentTime(0);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [blob]);
+
+  const togglePlay = () => {
+    if (!audioRef.current || !objectUrl) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration || 0);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    setCurrentTime(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setVolume(val);
+    setIsMuted(val === 0);
+    if (audioRef.current) {
+      audioRef.current.volume = val;
+    }
+  };
+
+  const toggleMute = () => {
+    if (!audioRef.current) return;
+    if (isMuted) {
+      audioRef.current.volume = volume || 0.8;
+      setIsMuted(false);
+    } else {
+      audioRef.current.volume = 0;
+      setIsMuted(true);
+    }
+  };
+
+  const handleRateChange = () => {
+    const rates = [0.8, 1.0, 1.25, 1.5, 2.0];
+    const nextIdx = (rates.indexOf(playbackRate) + 1) % rates.length;
+    const nextRate = rates[nextIdx];
+    setPlaybackRate(nextRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextRate;
+    }
+  };
+
+  const handleDownloadWav = () => {
+    if (!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${title.toLowerCase().replace(/\s+/g, '-')}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  if (!blob || !objectUrl) return null;
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-xl">
+      <audio
+        ref={audioRef}
+        src={objectUrl}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+      />
+
+      <div className="flex items-center justify-between mb-3">
+        <div className="truncate">
+          <p className="text-sm font-semibold text-zinc-200 truncate">{title}</p>
+          <p className="text-xs text-zinc-400">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {onSendToLab && (
+            <button
+              onClick={() => onSendToLab(blob, title)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-violet-300 font-medium transition cursor-pointer"
+              title="Open in Audio Lab for waveform trimming and editing"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-violet-400" />
+              Audio Lab
+            </button>
+          )}
+
+          {onSaveToLibrary && (
+            <button
+              onClick={() => onSaveToLibrary(blob, title)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-emerald-300 font-medium transition cursor-pointer"
+              title="Save track into your local Library"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5 text-emerald-400" />
+              Save
+            </button>
+          )}
+
+          {onOpenExport ? (
+            <button
+              onClick={() => onOpenExport(blob, title)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs text-white font-medium transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </button>
+          ) : (
+            <button
+              onClick={handleDownloadWav}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs text-white font-medium transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              WAV
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={togglePlay}
+          className="w-10 h-10 rounded-full bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-violet-600/30 transition cursor-pointer"
+          aria-label={isPlaying ? 'Pause' : 'Play'}
+        >
+          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+        </button>
+
+        <button
+          onClick={() => {
+            if (audioRef.current) {
+              audioRef.current.currentTime = 0;
+              setCurrentTime(0);
+            }
+          }}
+          className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
+          title="Restart from beginning"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
+
+        <div className="flex-1 flex items-center">
+          <input
+            type="range"
+            min={0}
+            max={duration || 1}
+            step={0.01}
+            value={currentTime}
+            onChange={handleSeek}
+            className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-violet-500"
+          />
+        </div>
+
+        <button
+          onClick={handleRateChange}
+          className="px-2 py-1 rounded bg-zinc-800 text-[11px] font-mono text-zinc-300 hover:bg-zinc-700 cursor-pointer"
+          title="Playback speed"
+        >
+          {playbackRate}x
+        </button>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={toggleMute}
+            className="p-1.5 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+          >
+            {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={isMuted ? 0 : volume}
+            onChange={handleVolumeChange}
+            className="w-16 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-violet-500 hidden sm:block"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+src/components/ExportModal.tsx
+
+import React, { useState } from 'react';
+import { X, Download, FileAudio, Check, Loader2 } from 'lucide-react';
+import { blobToAudioBuffer, audioBufferToWav } from '../utils/wavUtils';
+import { audioBufferToMp3 } from '../utils/mp3Encoder';
+import { getAudioContext } from '../utils/audioContextManager';
+
+interface ExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  blob: Blob | null;
+  defaultTitle?: string;
+}
+
+export const ExportModal: React.FC<ExportModalProps> = ({
+  isOpen,
+  onClose,
+  blob,
+  defaultTitle = 'voxcraft-audio',
+}) => {
+  const [filename, setFilename] = useState(defaultTitle);
+  const [format, setFormat] = useState<'wav' | 'mp3'>('wav');
+  const [wavBitDepth, setWavBitDepth] = useState<16 | 32>(16);
+  const [mp3Bitrate, setMp3Bitrate] = useState<128 | 192 | 320>(192);
+  const [exporting, setExporting] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+
+  if (!isOpen || !blob) return null;
+
+  const handleExport = async () => {
+    setExporting(true);
+    setDownloadSuccess(false);
+
+    try {
+      const ctx = getAudioContext();
+      const audioBuffer = await blobToAudioBuffer(blob, ctx);
+
+      let finalBlob: Blob;
+      let extension = 'wav';
+
+      if (format === 'wav') {
+        finalBlob = audioBufferToWav(audioBuffer, { float32: wavBitDepth === 32 });
+        extension = 'wav';
+      } else {
+        finalBlob = await audioBufferToMp3(audioBuffer, mp3Bitrate);
+        extension = 'mp3';
+      }
+
+      const safeName = (filename.trim() || 'voxcraft-audio').replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const downloadUrl = URL.createObjectURL(finalBlob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `${safeName}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+
+      setDownloadSuccess(true);
+      setTimeout(() => {
+        setDownloadSuccess(false);
+        onClose();
+      }, 1200);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export audio: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="flex items-center gap-3 mb-5">
+          <div className="p-2.5 rounded-xl bg-violet-600/20 text-violet-400 border border-violet-500/30">
+            <FileAudio className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Export Audio</h3>
+            <p className="text-xs text-zinc-400">Client-side rendering &amp; audio mastering</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-zinc-300 mb-1.5">File Name</label>
+            <input
+              type="text"
+              value={filename}
+              onChange={(e) => setFilename(e.target.value)}
+              className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-zinc-100 focus:outline-none focus:border-violet-500 transition"
+              placeholder="e.g. intro-voiceover"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-300 mb-1.5">Export Format</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormat('wav')}
+                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition cursor-pointer ${
+                  format === 'wav'
+                    ? 'bg-violet-600/20 border-violet-500 text-violet-200'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                }`}
+              >
+                WAV (Lossless)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormat('mp3')}
+                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition cursor-pointer ${
+                  format === 'mp3'
+                    ? 'bg-violet-600/20 border-violet-500 text-violet-200'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                }`}
+              >
+                MP3 (Compressed)
+              </button>
+            </div>
+          </div>
+
+          {format === 'wav' ? (
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5">WAV Bit Depth</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[16, 32].map((bit) => (
+                  <button
+                    key={bit}
+                    type="button"
+                    onClick={() => setWavBitDepth(bit as 16 | 32)}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                      wavBitDepth === bit
+                        ? 'bg-zinc-800 border-violet-500 text-violet-300'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+                    }`}
+                  >
+                    {bit === 16 ? '16-bit PCM (Standard)' : '32-bit Float (Studio)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5">MP3 Bitrate</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[128, 192, 320].map((rate) => (
+                  <button
+                    key={rate}
+                    type="button"
+                    onClick={() => setMp3Bitrate(rate as 128 | 192 | 320)}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                      mp3Bitrate === rate
+                        ? 'bg-zinc-800 border-violet-500 text-violet-300'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+                    }`}
+                  >
+                    {rate} kbps
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2">
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition shadow-lg shadow-violet-600/30 disabled:opacity-50 cursor-pointer"
+            >
+              {exporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Encoding {format.toUpperCase()}...
+                </>
+              ) : downloadSuccess ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-300" />
+                  Downloaded!
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download {format.toUpperCase()}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+7. Studio Tabs (src/components/tabs/)
+
+src/components/tabs/SingleVoiceoverTab.tsx
+
+import React, { useState } from 'react';
+import { Play, Sparkles, Loader2, Volume2, User, Sliders } from 'lucide-react';
+import { VoiceName } from '../../types';
+import { generateSingleTts } from '../../services/api';
+import { base64ToBlob } from '../../utils/wavUtils';
+import { speakWithBrowserTts } from '../../utils/browserSpeech';
+import { createSyntheticAudioBlob } from '../../utils/audioProcessing';
+import { AudioPlayer } from '../AudioPlayer';
+
+interface SingleVoiceoverTabProps {
+  onAudioGenerated: (blob: Blob, title: string) => void;
+  onSendToLab: (blob: Blob, title: string) => void;
+  onSaveToLibrary: (blob: Blob, title: string) => void;
+  onOpenExport: (blob: Blob, title: string) => void;
+  setFallbackActive: (active: boolean) => void;
+  prefilledVoice?: VoiceName;
+  prefilledStyle?: string;
+}
+
+export const SingleVoiceoverTab: React.FC<SingleVoiceoverTabProps> = ({
+  onAudioGenerated,
+  onSendToLab,
+  onSaveToLibrary,
+  onOpenExport,
+  setFallbackActive,
+  prefilledVoice,
+  prefilledStyle,
+}) => {
+  const [text, setText] = useState(
+    'Welcome to VoxCraft Studio. Generate ultra-realistic voiceovers powered by Gemini audio synthesis.'
+  );
+  const [selectedVoice, setSelectedVoice] = useState<VoiceName>(prefilledVoice || 'Puck');
+  const [language, setLanguage] = useState('English');
+  const [accent, setAccent] = useState('US');
+  const [tone, setTone] = useState('Neutral');
+  const [styleDirections, setStyleDirections] = useState(prefilledStyle || '');
+  const [speed, setSpeed] = useState(1.0);
+  const [pitch, setPitch] = useState(1.0);
+  const [loading, setLoading] = useState(false);
+  const [activeBlob, setActiveBlob] = useState<Blob | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const voices: Array<{ name: VoiceName; gender: string; description: string; tag: string }> = [
+    { name: 'Puck', gender: 'Male', description: 'Upbeat, energetic, friendly narrator', tag: 'Upbeat' },
+    { name: 'Charon', gender: 'Male', description: 'Calm, authoritative, deep broadcaster', tag: 'Calm & Deep' },
+    { name: 'Kore', gender: 'Female', description: 'Firm, articulate, polished professional', tag: 'Articulate' },
+    { name: 'Fenrir', gender: 'Male', description: 'Excitable, dynamic, expressive performer', tag: 'Dynamic' },
+    { name: 'Zephyr', gender: 'Female', description: 'Bright, warm, melodic storyteller', tag: 'Warm & Melodic' },
+  ];
+
+  const presets = [
+    { label: 'Commercial Promo', text: 'Discover the next evolution of sound. Engineered for artists, creators, and visionary storytellers.' },
+    { label: 'Audiobook Narration', text: 'The ancient gate stood untouched for centuries. As the moonlight struck the granite arches, a low resonance echoed across the valley.' },
+    { label: 'Tech Tutorial', text: 'To deploy this function, simply link your repository and specify your environment variables in the project dashboard.' },
+  ];
+
+  const handleGenerate = async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await generateSingleTts({
+        text,
+        voice: selectedVoice,
+        language,
+        accent,
+        tone,
+        styleDirections,
+      });
+
+      const wavBlob = base64ToBlob(res.audioBase64, 'audio/wav');
+      setActiveBlob(wavBlob);
+      setFallbackActive(false);
+      onAudioGenerated(wavBlob, `Voiceover - ${selectedVoice}`);
+    } catch (err: any) {
+      console.warn('Backend TTS failed, invoking browser voice fallback:', err);
+      setErrorMsg(err.message || 'AI Voice engine unreachable.');
+      setFallbackActive(true);
+
+      speakWithBrowserTts(text, {
+        rate: speed,
+        pitch: pitch,
+        voiceGender: ['Kore', 'Zephyr'].includes(selectedVoice) ? 'female' : 'male',
+      });
+
+      const fallbackBlob = createSyntheticAudioBlob(3.0);
+      setActiveBlob(fallbackBlob);
+      onAudioGenerated(fallbackBlob, `Browser Voice (${selectedVoice})`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Left Column: Script & Directives */}
+        <div className="flex-1 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-400" />
+                Voiceover Script
+              </label>
+              <span className={`text-xs ${text.length > 2800 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                {text.length} / 3000 chars
+              </span>
+            </div>
+
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={6}
+              maxLength={3000}
+              placeholder="Enter your narration or script text here..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition resize-y font-sans"
+            />
+
+            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-zinc-850">
+              <span className="text-xs text-zinc-500">Presets:</span>
+              {presets.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setText(p.text)}
+                  className="px-2.5 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition cursor-pointer"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Performance & Style Directions */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+            <h4 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-violet-400" />
+              Performance Directives
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Language</label>
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-violet-500 cursor-pointer"
+                >
+                  {['English', 'Spanish', 'French', 'German', 'Italian', 'Japanese', 'Hindi'].map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Accent</label>
+                <select
+                  value={accent}
+                  onChange={(e) => setAccent(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-violet-500 cursor-pointer"
+                >
+                  {['US', 'British', 'Australian', 'Canadian', 'Indian', 'Irish'].map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Emotion / Tone</label>
+                <select
+                  value={tone}
+                  onChange={(e) => setTone(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-violet-500 cursor-pointer"
+                >
+                  {['Neutral', 'Cheerful', 'Serious', 'Whispering', 'Excited', 'Calm', 'Authoritative', 'Storyteller'].map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Custom Style Prompt (Optional)</label>
+              <input
+                type="text"
+                value={styleDirections}
+                onChange={(e) => setStyleDirections(e.target.value)}
+                placeholder="e.g. Speak with subtle suspense, pausing gently between key phrases..."
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-850">
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                  <span>Speed</span>
+                  <span className="font-mono">{speed.toFixed(2)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2.0}
+                  step={0.05}
+                  value={speed}
+                  onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded appearance-none cursor-pointer accent-violet-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                  <span>Pitch</span>
+                  <span className="font-mono">{pitch.toFixed(2)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.6}
+                  max={1.4}
+                  step={0.05}
+                  value={pitch}
+                  onChange={(e) => setPitch(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded appearance-none cursor-pointer accent-violet-500"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Voice Selection & Action */}
+        <div className="w-full md:w-80 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm space-y-3">
+            <h4 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+              <User className="w-4 h-4 text-violet-400" />
+              Prebuilt Voice Models
+            </h4>
+
+            <div className="space-y-2">
+              {voices.map((v) => {
+                const isSelected = selectedVoice === v.name;
+                return (
+                  <div
+                    key={v.name}
+                    onClick={() => setSelectedVoice(v.name)}
+                    className={`p-3 rounded-xl border transition cursor-pointer flex items-start justify-between ${
+                      isSelected
+                        ? 'bg-violet-600/15 border-violet-500 text-white'
+                        : 'bg-zinc-950/70 border-zinc-800 text-zinc-300 hover:border-zinc-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm">{v.name}</span>
+                        <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400">
+                          {v.gender}
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-1 leading-snug">{v.description}</p>
+                    </div>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-violet-950 text-violet-300 border border-violet-800/60 shrink-0">
+                      {v.tag}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-3">
+              <button
+                onClick={handleGenerate}
+                disabled={loading || !text.trim()}
+                className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition shadow-lg shadow-violet-600/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Synthesizing Speech...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Generate Audio
+                  </>
+                )}
+              </button>
+            </div>
+
+            {errorMsg && (
+              <p className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-lg border border-rose-900/60">
+                {errorMsg}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {activeBlob && (
+        <div className="pt-2">
+          <AudioPlayer
+            blob={activeBlob}
+            title={`Narration (${selectedVoice})`}
+            onSendToLab={onSendToLab}
+            onSaveToLibrary={onSaveToLibrary}
+            onOpenExport={onOpenExport}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+src/components/tabs/MultiSpeakerTab.tsx
+
+import React, { useState } from 'react';
+import { Users, Play, Loader2, Sparkles, MessageSquare } from 'lucide-react';
+import { VoiceName } from '../../types';
+import { generateMultiSpeakerTts } from '../../services/api';
+import { parseDialogueScript } from '../../utils/scriptParser';
+import { base64ToBlob } from '../../utils/wavUtils';
+import { speakWithBrowserTts } from '../../utils/browserSpeech';
+import { createSyntheticAudioBlob } from '../../utils/audioProcessing';
+import { AudioPlayer } from '../AudioPlayer';
+
+interface MultiSpeakerTabProps {
+  onAudioGenerated: (blob: Blob, title: string) => void;
+  onSendToLab: (blob: Blob, title: string) => void;
+  onSaveToLibrary: (blob: Blob, title: string) => void;
+  onOpenExport: (blob: Blob, title: string) => void;
+  setFallbackActive: (active: boolean) => void;
+}
+
+export const MultiSpeakerTab: React.FC<MultiSpeakerTabProps> = ({
+  onAudioGenerated,
+  onSendToLab,
+  onSaveToLibrary,
+  onOpenExport,
+  setFallbackActive,
+}) => {
+  const [speaker1Name, setSpeaker1Name] = useState('Alex');
+  const [speaker1Voice, setSpeaker1Voice] = useState<VoiceName>('Puck');
+  const [speaker1Tone, setSpeaker1Tone] = useState('Upbeat');
+
+  const [speaker2Name, setSpeaker2Name] = useState('Dr. Maya');
+  const [speaker2Voice, setSpeaker2Voice] = useState<VoiceName>('Kore');
+  const [speaker2Tone, setSpeaker2Tone] = useState('Calm');
+
+  const [script, setScript] = useState(
+    `Alex: Maya, have you checked the new multi-speaker audio models yet?
+Dr. Maya: I did this morning. The natural cadence and conversational turn-taking are extraordinary.
+Alex: Exactly. We can now generate full studio dialogues with a single combined output!
+Dr. Maya: It saves hours of manual splicing and cross-fading.`
+  );
+
+  const [language, setLanguage] = useState('English');
+  const [accent, setAccent] = useState('US');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [activeBlob, setActiveBlob] = useState<Blob | null>(null);
+
+  const parsedTurns = parseDialogueScript(script, speaker1Name);
+
+  const dialoguePresets = [
+    {
+      title: 'Podcast Intro',
+      script: `Alex: Welcome back to The Tech Pulse! Today we are discussing AI voice cloning.
+Dr. Maya: Good to be here, Alex. This breakthrough in speech synthesis is reshaping audio production.
+Alex: Let us dive straight into how neural synthesis works under the hood.`,
+    },
+    {
+      title: 'Customer Consultation',
+      script: `Alex: Good afternoon! Thank you for calling VoxCraft support. How may I assist you?
+Dr. Maya: Hi there! I wanted to check how to configure dual-voice exports for my podcast.
+Alex: I can certainly guide you through that step-by-step.`,
+    },
+  ];
+
+  const handleGenerate = async () => {
+    if (!script.trim()) return;
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await generateMultiSpeakerTts({
+        script,
+        speaker1: { name: speaker1Name, voice: speaker1Voice, tone: speaker1Tone },
+        speaker2: { name: speaker2Name, voice: speaker2Voice, tone: speaker2Tone },
+        language,
+        accent,
+      });
+
+      const wavBlob = base64ToBlob(res.audioBase64, 'audio/wav');
+      setActiveBlob(wavBlob);
+      setFallbackActive(false);
+      onAudioGenerated(wavBlob, `Dialogue (${speaker1Name} & ${speaker2Name})`);
+    } catch (err: any) {
+      console.warn('Multi-speaker TTS failed, falling back:', err);
+      setErrorMsg(err.message || 'Multi-speaker synthesis failed.');
+      setFallbackActive(true);
+
+      speakWithBrowserTts(`${speaker1Name} and ${speaker2Name} dialogue fallback preview.`);
+      const synthBlob = createSyntheticAudioBlob(4.0);
+      setActiveBlob(synthBlob);
+      onAudioGenerated(synthBlob, `Dialogue Fallback`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Speaker Configuration Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Speaker 1 Card */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-violet-400">Speaker 1</span>
+            <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">Voice A</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Character Name</label>
+              <input
+                type="text"
+                value={speaker1Name}
+                onChange={(e) => setSpeaker1Name(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Base Voice</label>
+              <select
+                value={speaker1Voice}
+                onChange={(e) => setSpeaker1Voice(e.target.value as VoiceName)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-100 cursor-pointer"
+              >
+                {(['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'] as VoiceName[]).map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Tone</label>
+              <input
+                type="text"
+                value={speaker1Tone}
+                onChange={(e) => setSpeaker1Tone(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Speaker 2 Card */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Speaker 2</span>
+            <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">Voice B</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Character Name</label>
+              <input
+                type="text"
+                value={speaker2Name}
+                onChange={(e) => setSpeaker2Name(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Base Voice</label>
+              <select
+                value={speaker2Voice}
+                onChange={(e) => setSpeaker2Voice(e.target.value as VoiceName)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-100 cursor-pointer"
+              >
+                {(['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'] as VoiceName[]).map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Tone</label>
+              <input
+                type="text"
+                value={speaker2Tone}
+                onChange={(e) => setSpeaker2Tone(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Script Editor & Turn Parser Preview */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-violet-400" />
+                Script (Format: &quot;Name: line&quot;)
+              </label>
+              <span className={`text-xs ${script.length > 2800 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                {script.length} / 3000 chars
+              </span>
+            </div>
+
+            <textarea
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+              rows={8}
+              maxLength={3000}
+              placeholder="Name: dialogue line..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition font-mono leading-relaxed"
+            />
+
+            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-zinc-850">
+              <span className="text-xs text-zinc-500">Presets:</span>
+              {dialoguePresets.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setScript(p.script)}
+                  className="px-2.5 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition cursor-pointer"
+                >
+                  {p.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Turns Breakdown Preview & Generate Button */}
+        <div className="space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm space-y-3">
+            <h4 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+              <Users className="w-4 h-4 text-violet-400" />
+              Turn Sequence ({parsedTurns.length})
+            </h4>
+
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1 text-xs">
+              {parsedTurns.length === 0 ? (
+                <p className="text-zinc-500 italic">No turns detected. Use &quot;Name: text&quot; syntax.</p>
+              ) : (
+                parsedTurns.map((turn, i) => {
+                  const isS1 = turn.speaker.toLowerCase() === speaker1Name.toLowerCase();
+                  return (
+                    <div
+                      key={turn.id || i}
+                      className={`p-2.5 rounded-lg border text-xs ${
+                        isS1
+                          ? 'bg-violet-950/30 border-violet-800/50 text-violet-200'
+                          : 'bg-emerald-950/30 border-emerald-800/50 text-emerald-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold">{turn.speaker}</span>
+                        <span className="text-[10px] opacity-75 font-mono">
+                          {isS1 ? speaker1Voice : speaker2Voice}
+                        </span>
+                      </div>
+                      <p className="text-zinc-300 line-clamp-2">{turn.text}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={handleGenerate}
+                disabled={loading || parsedTurns.length === 0}
+                className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition shadow-lg shadow-violet-600/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Synthesizing Dialogue...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Generate Full Dialogue
+                  </>
+                )}
+              </button>
+            </div>
+
+            {errorMsg && (
+              <p className="text-xs text-rose-400 bg-rose-950/40 p-2 rounded-lg border border-rose-900/60">
+                {errorMsg}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {activeBlob && (
+        <div className="pt-2">
+          <AudioPlayer
+            blob={activeBlob}
+            title={`Dialogue: ${speaker1Name} & ${speaker2Name}`}
+            onSendToLab={onSendToLab}
+            onSaveToLibrary={onSaveToLibrary}
+            onOpenExport={onOpenExport}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+src/components/tabs/VoiceCloningTab.tsx
+
+import React, { useState, useRef } from 'react';
+import { Mic, Square, Upload, Loader2, Sparkles, Check, Bookmark, ArrowRight, Trash2 } from 'lucide-react';
+import { VoiceName, VoiceProfile } from '../../types';
+import { analyzeVoiceSample, VoiceAnalysisResult } from '../../services/api';
+import { loadVoiceProfiles, saveVoiceProfile, deleteVoiceProfile } from '../../utils/storage';
+
+interface VoiceCloningTabProps {
+  onApplyProfileToVoiceover: (voice: VoiceName, stylePrompt: string) => void;
+}
+
+export const VoiceCloningTab: React.FC<VoiceCloningTabProps> = ({ onApplyProfileToVoiceover }) => {
+  const [recording, setRecording] = useState(false);
+  const [recordDuration, setRecordDuration] = useState(0);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<VoiceAnalysisResult | null>(null);
+  const [profileName, setProfileName] = useState('');
+  const [savedProfiles, setSavedProfiles] = useState<VoiceProfile[]>(() => loadVoiceProfiles());
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+
+  const startRecording = async () => {
+    setErrorMsg(null);
+    setAnalysis(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await handleSampleReady(audioBlob);
+      };
+
+      recorder.start();
+      setRecording(true);
+      setRecordDuration(0);
+
+      timerRef.current = window.setInterval(() => {
+        setRecordDuration((prev) => {
+          if (prev >= 14) {
+            stopRecording();
+            return 15;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.error('Microphone error:', err);
+      setErrorMsg('Microphone access denied: ' + (err.message || 'Please check browser permissions.'));
+    }
+  };
+
+  const stopRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setRecording(false);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 4 * 1024 * 1024) {
+      setErrorMsg('File exceeds 4MB limit. Please upload a short sample under 15 seconds.');
+      return;
+    }
+
+    await handleSampleReady(file);
+  };
+
+  const handleSampleReady = async (blob: Blob) => {
+    setAnalyzing(true);
+    setErrorMsg(null);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const res = await analyzeVoiceSample({
+          audioBase64: base64,
+          mimeType: blob.type || 'audio/wav',
+        });
+
+        if (res.analysis) {
+          setAnalysis(res.analysis);
+          setProfileName(res.analysis.recommendedVoice + ' Style Persona');
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch (err: any) {
+      console.error('Analysis failure:', err);
+      setErrorMsg(err.message || 'Failed to analyze vocal profile with Gemini.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleSaveProfile = () => {
+    if (!analysis) return;
+    const newProfile: VoiceProfile = {
+      id: `profile-${Date.now()}`,
+      name: profileName.trim() || 'Custom Vocal Clone',
+      createdAt: Date.now(),
+      accent: analysis.accent,
+      recommendedVoice: analysis.recommendedVoice,
+      characteristics: analysis.characteristics,
+      stylePrompt: analysis.stylePrompt,
+      summary: analysis.summary,
+    };
+
+    const ok = saveVoiceProfile(newProfile);
+    if (ok) {
+      setSavedProfiles(loadVoiceProfiles());
+      setStatusMessage('Voice profile saved to local storage!');
+      setTimeout(() => setStatusMessage(null), 2500);
+    }
+  };
+
+  const handleDeleteProfile = (id: string) => {
+    deleteVoiceProfile(id);
+    setSavedProfiles(loadVoiceProfiles());
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Intro banner */}
+      <div className="bg-gradient-to-r from-violet-900/30 to-indigo-900/20 border border-violet-800/40 rounded-2xl p-5">
+        <h3 className="text-base font-bold text-white flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-violet-400" />
+          Style Voice Cloning
+        </h3>
+        <p className="text-xs text-zinc-300 mt-1 max-w-2xl leading-relaxed">
+          Record or upload a 10-15s speech sample (max 4 MB). Gemini analyzes pitch, pacing, timbre, and accent
+          to recommend the best base voice model and synthesize matching vocal directions.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Sample Ingestion Card */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <h4 className="text-sm font-bold text-zinc-200">Provide Voice Sample (Max 15s)</h4>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            {!recording ? (
+              <button
+                onClick={startRecording}
+                className="flex-1 py-3 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-medium text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-violet-600/20"
+              >
+                <Mic className="w-4 h-4" />
+                Record Microphone
+              </button>
+            ) : (
+              <button
+                onClick={stopRecording}
+                className="flex-1 py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs flex items-center justify-center gap-2 transition cursor-pointer animate-pulse"
+              >
+                <Square className="w-4 h-4" />
+                Stop Recording ({recordDuration}s / 15s)
+              </button>
+            )}
+
+            <label className="flex-1 py-3 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-zinc-700">
+              <Upload className="w-4 h-4 text-violet-400" />
+              Upload Audio File
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileUpload}
+                className="hidden"
+                disabled={recording || analyzing}
+              />
+            </label>
+          </div>
+
+          {analyzing && (
+            <div className="p-6 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col items-center justify-center text-center space-y-2">
+              <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+              <p className="text-xs font-semibold text-zinc-200">Gemini Neural Audio Profiler</p>
+              <p className="text-[11px] text-zinc-400">Extracting vocal timbre, cadence, and acoustic characteristics...</p>
+            </div>
+          )}
+
+          {errorMsg && (
+            <p className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-lg border border-rose-900/60">
+              {errorMsg}
+            </p>
+          )}
+
+          {statusMessage && (
+            <p className="text-xs text-emerald-400 bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-900/60 flex items-center gap-1.5">
+              <Check className="w-4 h-4" /> {statusMessage}
+            </p>
+          )}
+
+          {/* Analysis Result Card */}
+          {analysis && (
+            <div className="bg-zinc-950 border border-violet-900/60 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-violet-300">Profile Analysis</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-900/50 text-violet-200 border border-violet-700/60">
+                  Recommended Voice: {analysis.recommendedVoice}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-zinc-900 p-2 rounded border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Accent</span>
+                  <span className="text-zinc-200 font-medium">{analysis.accent || 'Standard'}</span>
+                </div>
+                <div className="bg-zinc-900 p-2 rounded border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Timbre</span>
+                  <span className="text-zinc-200 font-medium">{analysis.characteristics?.texture || 'Clear'}</span>
+                </div>
+                <div className="bg-zinc-900 p-2 rounded border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Pitch</span>
+                  <span className="text-zinc-200 font-medium">{analysis.characteristics?.pitch || 'Medium'}</span>
+                </div>
+                <div className="bg-zinc-900 p-2 rounded border border-zinc-800">
+                  <span className="text-zinc-500 block text-[10px]">Tempo</span>
+                  <span className="text-zinc-200 font-medium">{analysis.characteristics?.tempo || 'Moderate'}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-300 italic">{analysis.summary}</p>
+
+              <div>
+                <label className="text-[11px] text-zinc-400 block mb-1">Generated Style Directive:</label>
+                <div className="bg-zinc-900 p-2 rounded border border-zinc-800 text-xs text-violet-200 font-mono">
+                  {analysis.stylePrompt}
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  placeholder="Profile name"
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100"
+                />
+                <button
+                  onClick={handleSaveProfile}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Bookmark className="w-3.5 h-3.5" /> Save
+                </button>
+              </div>
+
+              <button
+                onClick={() => onApplyProfileToVoiceover(analysis.recommendedVoice, analysis.stylePrompt)}
+                className="w-full py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+              >
+                Use in Single Voiceover <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Saved Profiles Column */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+          <h4 className="text-sm font-bold text-zinc-200">Saved Style Profiles ({savedProfiles.length})</h4>
+
+          {savedProfiles.length === 0 ? (
+            <p className="text-xs text-zinc-500 italic">No saved vocal profiles yet. Analyze a sample above to save.</p>
+          ) : (
+            <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+              {savedProfiles.map((prof) => (
+                <div
+                  key={prof.id}
+                  className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 transition space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-zinc-100">{prof.name}</p>
+                      <p className="text-[11px] text-zinc-400">
+                        Base: <span className="text-violet-300 font-semibold">{prof.recommendedVoice}</span> | {prof.accent}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteProfile(prof.id)}
+                      className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-900 transition"
+                      title="Delete profile"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-zinc-400 line-clamp-2">{prof.summary || prof.stylePrompt}</p>
+
+                  <button
+                    onClick={() => onApplyProfileToVoiceover(prof.recommendedVoice, prof.stylePrompt)}
+                    className="w-full py-1.5 rounded-lg bg-zinc-800 hover:bg-violet-600 hover:text-white text-violet-300 text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    Load into Studio <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+src/components/tabs/AudioLabTab.tsx
+
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Play,
+  Pause,
+  Scissors,
+  RotateCcw,
+  Volume2,
+  Wand2,
+  BookmarkPlus,
+  Download,
+  Activity,
+  Layers,
+} from 'lucide-react';
+import { blobToAudioBuffer, audioBufferToWav } from '../../utils/wavUtils';
+import { processAudioBuffer } from '../../utils/audioProcessing';
+import { getAudioContext, ensureAudioContextStarted } from '../../utils/audioContextManager';
+
+interface AudioLabTabProps {
+  currentBlob: Blob | null;
+  trackTitle?: string;
+  onSaveToLibrary: (blob: Blob, title: string) => void;
+  onOpenExport: (blob: Blob, title: string) => void;
+}
+
+export const AudioLabTab: React.FC<AudioLabTabProps> = ({
+  currentBlob,
+  trackTitle = 'Studio Master',
+  onSaveToLibrary,
+  onOpenExport,
+}) => {
+  const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
+  const [history, setHistory] = useState<AudioBuffer[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  // Edit Parameters
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [fadeIn, setFadeIn] = useState(0.2);
+  const [fadeOut, setFadeOut] = useState(0.2);
+  const [volumeGain, setVolumeGain] = useState(1.0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const pauseOffsetRef = useRef<number>(0);
+  const animFrameRef = useRef<number | null>(null);
+
+  // Load Blob into Web Audio AudioBuffer
+  useEffect(() => {
+    if (!currentBlob) return;
+    const ctx = getAudioContext();
+    blobToAudioBuffer(currentBlob, ctx).then((buf) => {
+      setAudioBuffer(buf);
+      setTrimStart(0);
+      setTrimEnd(buf.duration);
+      setHistory([]);
+      pauseOffsetRef.current = 0;
+      setCurrentTime(0);
+    });
+  }, [currentBlob]);
+
+  // Draw Waveform to Canvas
+  useEffect(() => {
+    if (!audioBuffer || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const channelData = audioBuffer.getChannelData(0);
+    const step = Math.ceil(channelData.length / width);
+    const amp = height / 2;
+
+    // Draw background grid
+    ctx.fillStyle = '#09090b';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#27272a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, amp);
+    ctx.lineTo(width, amp);
+    ctx.stroke();
+
+    // Draw Waveform bars
+    ctx.fillStyle = '#8b5cf6';
+    for (let i = 0; i < width; i++) {
+      let min = 1.0;
+      let max = -1.0;
+      for (let j = 0; j < step; j++) {
+        const datum = channelData[i * step + j];
+        if (datum < min) min = datum;
+        if (datum > max) max = datum;
+      }
+      const y1 = (1 + min) * amp;
+      const y2 = Math.max((1 + max) * amp, y1 + 1);
+      ctx.fillRect(i, y1, 1, y2 - y1);
+    }
+
+    // Draw Trim Shading
+    const duration = audioBuffer.duration;
+    if (duration > 0) {
+      const startX = (trimStart / duration) * width;
+      const endX = (trimEnd / duration) * width;
+
+      // Darken unselected regions
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillRect(0, 0, startX, height);
+      ctx.fillRect(endX, 0, width - endX, height);
+
+      // Draw Trim markers
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(startX, 0);
+      ctx.lineTo(startX, height);
+      ctx.moveTo(endX, 0);
+      ctx.lineTo(endX, height);
+      ctx.stroke();
+
+      // Draw Playhead
+      const playheadX = (currentTime / duration) * width;
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(playheadX, 0);
+      ctx.lineTo(playheadX, height);
+      ctx.stroke();
+    }
+  }, [audioBuffer, trimStart, trimEnd, currentTime]);
+
+  const togglePlayback = async () => {
+    if (!audioBuffer) return;
+    const ctx = await ensureAudioContextStarted();
+
+    if (isPlaying) {
+      if (sourceNodeRef.current) {
+        sourceNodeRef.current.stop();
+        sourceNodeRef.current.disconnect();
+      }
+      pauseOffsetRef.current = ctx.currentTime - startTimeRef.current;
+      setIsPlaying(false);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    } else {
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.playbackRate.value = playbackSpeed;
+
+      const gain = ctx.createGain();
+      gain.gain.value = volumeGain;
+
+      source.connect(gain);
+      gain.connect(ctx.destination);
+
+      let offset = pauseOffsetRef.current;
+      if (offset >= trimEnd || offset < trimStart) {
+        offset = trimStart;
+      }
+
+      startTimeRef.current = ctx.currentTime - offset;
+      source.start(0, offset, trimEnd - offset);
+      sourceNodeRef.current = source;
+      setIsPlaying(true);
+
+      const updatePlayhead = () => {
+        const played = ctx.currentTime - startTimeRef.current;
+        if (played >= trimEnd) {
+          setIsPlaying(false);
+          pauseOffsetRef.current = trimStart;
+          setCurrentTime(trimStart);
+        } else {
+          setCurrentTime(played);
+          animFrameRef.current = requestAnimationFrame(updatePlayhead);
+        }
+      };
+      animFrameRef.current = requestAnimationFrame(updatePlayhead);
+
+      source.onended = () => {
+        setIsPlaying(false);
+      };
+    }
+  };
+
+  const handleApplyEdits = async () => {
+    if (!audioBuffer) return;
+    try {
+      setHistory((prev) => [...prev, audioBuffer]);
+      const processed = await processAudioBuffer(audioBuffer, {
+        trimStart,
+        trimEnd,
+        fadeIn,
+        fadeOut,
+        volume: volumeGain,
+        playbackRate: playbackSpeed,
+      });
+
+      setAudioBuffer(processed);
+      setTrimStart(0);
+      setTrimEnd(processed.duration);
+      pauseOffsetRef.current = 0;
+      setCurrentTime(0);
+    } catch (err) {
+      console.error('Audio processing failed:', err);
+    }
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setAudioBuffer(prev);
+    setTrimStart(0);
+    setTrimEnd(prev.duration);
+    pauseOffsetRef.current = 0;
+    setCurrentTime(0);
+  };
+
+  const handleExportBlob = () => {
+    if (!audioBuffer) return null;
+    return audioBufferToWav(audioBuffer);
+  };
+
+  if (!currentBlob && !audioBuffer) {
+    return (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center space-y-4">
+        <Activity className="w-12 h-12 text-zinc-600 mx-auto" />
+        <h3 className="text-base font-bold text-zinc-200">No Audio Loaded in Lab</h3>
+        <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+          Generate voiceover in the Single Voiceover or Multi-Speaker tab, then click &quot;Audio Lab&quot; to inspect and trim waveforms.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Waveform Visualization Box */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-violet-400" />
+              {trackTitle}
+            </h3>
+            <p className="text-xs text-zinc-400">
+              Duration: {audioBuffer?.duration.toFixed(2)}s | Rate: {audioBuffer?.sampleRate} Hz
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleUndo}
+              disabled={history.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 font-medium transition disabled:opacity-40 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Undo ({history.length})
+            </button>
+
+            <button
+              onClick={() => {
+                const b = handleExportBlob();
+                if (b) onSaveToLibrary(b, `${trackTitle} (Edited)`);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs text-white font-medium transition cursor-pointer"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5" />
+              Save to Library
+            </button>
+
+            <button
+              onClick={() => {
+                const b = handleExportBlob();
+                if (b) onOpenExport(b, `${trackTitle} (Master)`);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs text-white font-medium transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </button>
+          </div>
+        </div>
+
+        {/* Canvas Waveform */}
+        <div className="relative rounded-xl overflow-hidden border border-zinc-800">
+          <canvas
+            ref={canvasRef}
+            width={900}
+            height={160}
+            className="w-full h-40 block cursor-crosshair"
+            onClick={(e) => {
+              if (!audioBuffer) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const pct = clickX / rect.width;
+              const newTime = pct * audioBuffer.duration;
+              pauseOffsetRef.current = newTime;
+              setCurrentTime(newTime);
+            }}
+          />
+        </div>
+
+        {/* Transport & Controls */}
+        <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={togglePlayback}
+              className="w-10 h-10 rounded-full bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center shadow-lg shadow-violet-600/30 transition cursor-pointer"
+            >
+              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+            </button>
+
+            <div className="font-mono text-xs text-zinc-300">
+              {currentTime.toFixed(2)}s / {audioBuffer?.duration.toFixed(2)}s
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleApplyEdits}
+              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs flex items-center gap-2 transition cursor-pointer"
+            >
+              <Wand2 className="w-4 h-4" />
+              Render &amp; Apply Edits
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Editing Tool Rack */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Trim Panel */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+            <Scissors className="w-3.5 h-3.5 text-violet-400" />
+            Trim Range
+          </h4>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400">Start (s)</span>
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={trimEnd}
+                value={trimStart}
+                onChange={(e) => setTrimStart(parseFloat(e.target.value) || 0)}
+                className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-right text-zinc-200"
+              />
+            </div>
+
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400">End (s)</span>
+              <input
+                type="number"
+                step="0.1"
+                min={trimStart}
+                max={audioBuffer?.duration || 10}
+                value={trimEnd}
+                onChange={(e) => setTrimEnd(parseFloat(e.target.value) || 0)}
+                className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-right text-zinc-200"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Fades Panel */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-violet-400" />
+            Fade Curves
+          </h4>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400">Fade In ({fadeIn}s)</span>
+              <input
+                type="range"
+                min={0}
+                max={2.0}
+                step={0.1}
+                value={fadeIn}
+                onChange={(e) => setFadeIn(parseFloat(e.target.value))}
+                className="w-28 h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-violet-500"
+              />
+            </div>
+
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400">Fade Out ({fadeOut}s)</span>
+              <input
+                type="range"
+                min={0}
+                max={2.0}
+                step={0.1}
+                value={fadeOut}
+                onChange={(e) => setFadeOut(parseFloat(e.target.value))}
+                className="w-28 h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-violet-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Gain & Speed Panel */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+            <Volume2 className="w-3.5 h-3.5 text-violet-400" />
+            Gain &amp; Speed
+          </h4>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400">Volume Gain ({Math.round(volumeGain * 100)}%)</span>
+              <input
+                type="range"
+                min={0.2}
+                max={2.0}
+                step={0.05}
+                value={volumeGain}
+                onChange={(e) => setVolumeGain(parseFloat(e.target.value))}
+                className="w-28 h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-violet-500"
+              />
+            </div>
+
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-zinc-400">Speed ({playbackSpeed}x)</span>
+              <input
+                type="range"
+                min={0.5}
+                max={2.0}
+                step={0.05}
+                value={playbackSpeed}
+                onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
+                className="w-28 h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-violet-500"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+src/components/tabs/LibraryTab.tsx
+
+import React, { useState } from 'react';
+import { Play, Pause, Trash2, Download, Wand2, Search, Edit2, Check, FolderHeart } from 'lucide-react';
+import { LibraryTrack } from '../../types';
+import { deleteTrackFromLibrary, updateTrackTitle } from '../../utils/db';
+
+interface LibraryTabProps {
+  tracks: LibraryTrack[];
+  onRefreshTracks: () => void;
+  onSendToLab: (blob: Blob, title: string) => void;
+  onOpenExport: (blob: Blob, title: string) => void;
+}
+
+export const LibraryTab: React.FC<LibraryTabProps> = ({
+  tracks,
+  onRefreshTracks,
+  onSendToLab,
+  onOpenExport,
+}) => {
+  const [search, setSearch] = useState('');
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+
+  const filtered = tracks.filter((t) =>
+    t.title.toLowerCase().includes(search.toLowerCase()) ||
+    t.voiceName.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const togglePlay = (track: LibraryTrack) => {
+    if (playingId === track.id) {
+      setPlayingId(null);
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        setAudioUrl(null);
+      }
+    } else {
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      const url = URL.createObjectURL(track.audioBlob);
+      setAudioUrl(url);
+      setPlayingId(track.id);
+      const audio = new Audio(url);
+      audio.play().catch(console.error);
+      audio.onended = () => {
+        setPlayingId(null);
+      };
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Delete this track from Library?')) {
+      await deleteTrackFromLibrary(id);
+      onRefreshTracks();
+    }
+  };
+
+  const handleStartRename = (track: LibraryTrack) => {
+    setEditingId(track.id);
+    setEditTitle(track.title);
+  };
+
+  const handleSaveRename = async (id: string) => {
+    if (editTitle.trim()) {
+      await updateTrackTitle(id, editTitle.trim());
+      onRefreshTracks();
+    }
+    setEditingId(null);
+  };
+
+  const handleDownload = (track: LibraryTrack) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(track.audioBlob);
+    a.download = `${track.title.toLowerCase().replace(/\s+/g, '-')}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
+            <FolderHeart className="w-5 h-5 text-violet-400" />
+            Voice Production Library ({tracks.length})
+          </h3>
+          <p className="text-xs text-zinc-400">All generated voiceovers and mastered tracks</p>
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search titles or voices..."
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-3.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center space-y-3">
+          <FolderHeart className="w-10 h-10 text-zinc-600 mx-auto" />
+          <p className="text-sm font-semibold text-zinc-300">No tracks in library yet</p>
+          <p className="text-xs text-zinc-500">
+            Generate speech from Single Voiceover or Multi-Speaker and click &quot;Save&quot; to keep them here.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((track) => (
+            <div
+              key={track.id}
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-zinc-700 transition"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => togglePlay(track)}
+                  className="w-10 h-10 rounded-full bg-violet-600/20 hover:bg-violet-600 text-violet-400 hover:text-white flex items-center justify-center shrink-0 border border-violet-500/30 transition cursor-pointer"
+                >
+                  {playingId === track.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                </button>
+
+                <div className="min-w-0">
+                  {editingId === track.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="bg-zinc-950 border border-violet-500 rounded px-2 py-0.5 text-xs text-white"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleSaveRename(track.id)}
+                        className="p-1 text-emerald-400 hover:text-emerald-300"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-zinc-100 truncate">{track.title}</p>
+                      <button
+                        onClick={() => handleStartRename(track)}
+                        className="text-zinc-500 hover:text-zinc-300"
+                        title="Rename track"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
+                    <span className="font-medium text-violet-400">{track.voiceName}</span>
+                    <span>•</span>
+                    <span>{new Date(track.createdAt).toLocaleDateString()}</span>
+                    <span>•</span>
+                    <span className="capitalize px-1.5 py-0.2 rounded bg-zinc-800 text-[10px] text-zinc-300">
+                      {track.mode}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <button
+                  onClick={() => onSendToLab(track.audioBlob, track.title)}
+                  className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-violet-300 text-xs flex items-center gap-1 cursor-pointer"
+                  title="Open in Audio Lab"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={() => onOpenExport(track.audioBlob, track.title)}
+                  className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs flex items-center gap-1 cursor-pointer"
+                  title="Export WAV or MP3"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={() => handleDelete(track.id)}
+                  className="p-2 rounded-lg bg-zinc-800 hover:bg-rose-900/50 text-zinc-400 hover:text-rose-300 text-xs flex items-center gap-1 cursor-pointer"
+                  title="Delete track"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+8. Root Application (src/App.tsx, src/main.tsx, src/index.css)
+
+src/index.css
+
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+src/main.tsx
+
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+src/App.tsx
+
+import React, { useEffect, useState, useCallback } from 'react';
+import { Header, TabKey } from './components/Header';
+import { FallbackBanner } from './components/FallbackBanner';
+import { ExportModal } from './components/ExportModal';
+import { SingleVoiceoverTab } from './components/tabs/SingleVoiceoverTab';
+import { MultiSpeakerTab } from './components/tabs/MultiSpeakerTab';
+import { VoiceCloningTab } from './components/tabs/VoiceCloningTab';
+import { AudioLabTab } from './components/tabs/AudioLabTab';
+import { LibraryTab } from './components/tabs/LibraryTab';
+import { fetchHealth, HealthResponse } from './services/api';
+import { getAllTracks, saveTrackToLibrary } from './utils/db';
+import { LibraryTrack, VoiceName } from './types';
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<TabKey>('single');
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [fallbackActive, setFallbackActive] = useState(false);
+
+  // Cross-tab Audio State
+  const [currentBlob, setCurrentBlob] = useState<Blob | null>(null);
+  const [currentTitle, setCurrentTitle] = useState('Voice Track');
+  const [labBlob, setLabBlob] = useState<Blob | null>(null);
+  const [labTitle, setLabTitle] = useState('Studio Master');
+
+  // Pre-fill for cloned voice transfer
+  const [prefilledVoice, setPrefilledVoice] = useState<VoiceName | undefined>(undefined);
+  const [prefilledStyle, setPrefilledStyle] = useState<string | undefined>(undefined);
+
+  // Library Tracks
+  const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
+
+  // Export Modal State
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportBlob, setExportBlob] = useState<Blob | null>(null);
+  const [exportTitle, setExportTitle] = useState('voxcraft-export');
+
+  const checkApiHealth = useCallback(async () => {
+    setHealthLoading(true);
+    try {
+      const res = await fetchHealth();
+      setHealth(res);
+      if (!res.hasApiKey) {
+        setFallbackActive(true);
+      }
+    } catch (err) {
+      console.warn('Health check failed:', err);
+      setHealth(null);
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
+  const refreshLibrary = useCallback(async () => {
+    try {
+      const tracks = await getAllTracks();
+      setLibraryTracks(tracks);
+    } catch (err) {
+      console.warn('Failed to load library:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkApiHealth();
+    refreshLibrary();
+  }, [checkApiHealth, refreshLibrary]);
+
+  const handleAudioGenerated = (blob: Blob, title: string) => {
+    setCurrentBlob(blob);
+    setCurrentTitle(title);
+  };
+
+  const handleSendToLab = (blob: Blob, title: string) => {
+    setLabBlob(blob);
+    setLabTitle(title);
+    setActiveTab('editor');
+  };
+
+  const handleSaveToLibrary = async (blob: Blob, title: string) => {
+    const track: LibraryTrack = {
+      id: `track-${Date.now()}`,
+      title,
+      createdAt: Date.now(),
+      duration: 0,
+      voiceName: 'Master Output',
+      mode: 'single',
+      textSnippet: title,
+      audioBlob: blob,
+    };
+    await saveTrackToLibrary(track);
+    await refreshLibrary();
+    alert(`Saved "${title}" to Library!`);
+  };
+
+  const handleOpenExport = (blob: Blob, title?: string) => {
+    setExportBlob(blob);
+    setExportTitle(title || 'voxcraft-export');
+    setExportModalOpen(true);
+  };
+
+  const handleApplyClonedVoice = (voice: VoiceName, stylePrompt: string) => {
+    setPrefilledVoice(voice);
+    setPrefilledStyle(stylePrompt);
+    setActiveTab('single');
+  };
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
+      <FallbackBanner
+        visible={fallbackActive}
+        onDismiss={() => setFallbackActive(false)}
+      />
+
+      <Header
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        health={health}
+        healthLoading={healthLoading}
+        onRefreshHealth={checkApiHealth}
+        tracksCount={libraryTracks.length}
+      />
+
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'single' && (
+          <SingleVoiceoverTab
+            onAudioGenerated={handleAudioGenerated}
+            onSendToLab={handleSendToLab}
+            onSaveToLibrary={handleSaveToLibrary}
+            onOpenExport={handleOpenExport}
+            setFallbackActive={setFallbackActive}
+            prefilledVoice={prefilledVoice}
+            prefilledStyle={prefilledStyle}
+          />
+        )}
+
+        {activeTab === 'dialogue' && (
+          <MultiSpeakerTab
+            onAudioGenerated={handleAudioGenerated}
+            onSendToLab={handleSendToLab}
+            onSaveToLibrary={handleSaveToLibrary}
+            onOpenExport={handleOpenExport}
+            setFallbackActive={setFallbackActive}
+          />
+        )}
+
+        {activeTab === 'cloning' && (
+          <VoiceCloningTab onApplyProfileToVoiceover={handleApplyClonedVoice} />
+        )}
+
+        {activeTab === 'editor' && (
+          <AudioLabTab
+            currentBlob={labBlob || currentBlob}
+            trackTitle={labTitle || currentTitle}
+            onSaveToLibrary={handleSaveToLibrary}
+            onOpenExport={handleOpenExport}
+          />
+        )}
+
+        {activeTab === 'library' && (
+          <LibraryTab
+            tracks={libraryTracks}
+            onRefreshTracks={refreshLibrary}
+            onSendToLab={handleSendToLab}
+            onOpenExport={handleOpenExport}
+          />
+        )}
+      </main>
+
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        blob={exportBlob}
+        defaultTitle={exportTitle}
+      />
+
+      <footer className="border-t border-zinc-900 py-6 text-center text-xs text-zinc-500">
+        VoxCraft Studio &bull; Multi-Speaker &amp; Style-Cloned AI Speech Production &bull; Powered by Gemini
+      </footer>
+    </div>
+  );
+}
+
+9. Unit Tests (test/)
+
+test/scriptParser.test.ts
+
+import { describe, it, expect } from 'vitest';
+import { parseDialogueScript, extractSpeakerNames } from '../src/utils/scriptParser';
+
+describe('Script Parser', () => {
+  it('parses basic "Name: line" turns correctly', () => {
+    const script = `Alice: Hello Bob!\nBob: Good day Alice!`;
+    const turns = parseDialogueScript(script);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[0].speaker).toBe('Alice');
+    expect(turns[0].text).toBe('Hello Bob!');
+    expect(turns[1].speaker).toBe('Bob');
+    expect(turns[1].text).toBe('Good day Alice!');
+  });
+
+  it('handles multi-line utterances under the same speaker', () => {
+    const script = `Alice: This is the first sentence.\nThis continues the thought.\nBob: Understood.`;
+    const turns = parseDialogueScript(script);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[0].speaker).toBe('Alice');
+    expect(turns[0].text).toBe('This is
